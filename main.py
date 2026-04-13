@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from database import customers, accounts, transactions
-from bson import ObjectId
 import uuid
 from datetime import datetime
 
@@ -26,7 +25,7 @@ def login(user: dict):
     token = str(uuid.uuid4())
 
     customers.update_one(
-        {"_id": existing["_id"]},
+        {"email": user["email"]},
         {"$set": {"token": token}}
     )
 
@@ -38,13 +37,19 @@ def get_user(token):
     return customers.find_one({"token": token})
 
 
-# 🟢 Add Balance (for demo)
+# 🟢 Add Balance (FIXED)
 @app.post("/add-balance")
 def add_balance(data: dict):
+    acc = accounts.find_one({"account_id": data["account_id"]})
+
+    if not acc:
+        return {"error": "Account not found"}
+
     accounts.update_one(
-        {"_id": ObjectId(data["account_id"])},
+        {"account_id": data["account_id"]},
         {"$set": {"balance": data["amount"]}}
     )
+
     return {"msg": "Balance updated"}
 
 
@@ -63,7 +68,7 @@ def detect_anomaly(account_id, amount):
     return 0
 
 
-# 🟢 Transfer (PROTECTED + USER CHECK + AI)
+# 🟢 Transfer (FULL FIX)
 @app.post("/transfer")
 def transfer(data: dict):
     user = get_user(data.get("token"))
@@ -71,15 +76,15 @@ def transfer(data: dict):
     if not user:
         return {"error": "Unauthorized"}
 
-    from_acc = accounts.find_one({"_id": ObjectId(data["from_account"])})
-    to_acc = accounts.find_one({"_id": ObjectId(data["to_account"])})
+    from_acc = accounts.find_one({"account_id": data["from_account"]})
+    to_acc = accounts.find_one({"account_id": data["to_account"]})
     amount = data["amount"]
 
     if not from_acc or not to_acc:
         return {"error": "Invalid account"}
 
-    # 🔒 ensure user owns the account
-    if from_acc["customer_id"] != user["email"]:
+    # 🔒 ensure user owns account
+    if from_acc["customer_id"] != user["customer_id"]:
         return {"error": "Unauthorized access"}
 
     if amount <= 0:
@@ -96,12 +101,12 @@ def transfer(data: dict):
 
     # update balances
     accounts.update_one(
-        {"_id": ObjectId(data["from_account"])},
+        {"account_id": data["from_account"]},
         {"$set": {"balance": from_acc["balance"] - amount}}
     )
 
     accounts.update_one(
-        {"_id": ObjectId(data["to_account"])},
+        {"account_id": data["to_account"]},
         {"$set": {"balance": to_acc["balance"] + amount}}
     )
 
@@ -118,13 +123,14 @@ def transfer(data: dict):
     return {"msg": "Transfer successful", "flagged": flagged}
 
 
-# 🟢 Set Limit
+# 🟢 Set Limit (FIXED)
 @app.post("/set-limit")
 def set_limit(data: dict):
     accounts.update_one(
-        {"_id": ObjectId(data["account_id"])},
+        {"account_id": data["account_id"]},
         {"$set": {"transaction_limit": data["limit"]}}
     )
+
     return {"msg": "Limit updated"}
 
 
