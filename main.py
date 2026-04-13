@@ -2,9 +2,15 @@ from fastapi import FastAPI
 from database import customers, accounts, transactions
 import uuid
 from datetime import datetime
+from pydantic import BaseModel
+from database import requests
 
 app = FastAPI()
 
+class ServiceRequest(BaseModel):
+    customer_id: str
+    type: str
+    description: str
 
 @app.get("/")
 def home():
@@ -164,3 +170,33 @@ def insights(account_id: str):
         "avg_transaction": avg,
         "num_transactions": count
     }
+
+@app.post("/request-service")
+def request_service(data: ServiceRequest):
+    requests.insert_one({
+        "customer_id": data.customer_id,
+        "type": data.type,
+        "description": data.description,
+        "status": "PENDING",
+        "timestamp": datetime.utcnow()
+    })
+
+    return {"msg": "Service request submitted"}
+
+@app.get("/requests/{customer_id}")
+def get_requests(customer_id: str):
+    reqs = list(requests.find({"customer_id": customer_id}))
+
+    for r in reqs:
+        r["_id"] = str(r["_id"])
+
+    return reqs
+
+@app.post("/update-request")
+def update_request(data: dict):
+    requests.update_one(
+        {"_id": ObjectId(data["request_id"])},
+        {"$set": {"status": data["status"]}}
+    )
+
+    return {"msg": "Request updated"}
