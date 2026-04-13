@@ -3,7 +3,20 @@ import requests
 
 BASE_URL = "http://127.0.0.1:8000"
 
-# 🔐 Session token
+# Background CSS
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-color: #0e1117;
+        color: white;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+#  Session token
 if "token" not in st.session_state:
     st.session_state.token = None
 
@@ -22,7 +35,7 @@ menu = st.sidebar.selectbox("Menu", [
 ])
 
 
-# 🔹 Login
+#  Login
 if menu == "Login":
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
@@ -45,7 +58,7 @@ if menu == "Login":
             st.error(res.text)
 
 
-# 🔹 Add Balance
+#  Add Balance
 elif menu == "Add Balance":
     acc_id = st.text_input("Account ID")
     amount = st.number_input("Amount")
@@ -62,7 +75,7 @@ elif menu == "Add Balance":
             st.error(res.text)
 
 
-# 🔹 Transfer
+#  Transfer
 elif menu == "Transfer":
     from_acc = st.text_input("From Account ID")
     to_acc = st.text_input("To Account ID")
@@ -85,7 +98,7 @@ elif menu == "Transfer":
                 st.error(res.text)
 
 
-# 🔹 Set Limit
+#  Set Limit
 elif menu == "Set Limit":
     acc_id = st.text_input("Account ID")
     limit = st.number_input("New Limit")
@@ -102,7 +115,7 @@ elif menu == "Set Limit":
             st.error(res.text)
 
 
-# 🔹 Transactions
+#  Transactions
 elif menu == "Transactions":
     acc_id = st.text_input("Account ID")
 
@@ -115,7 +128,11 @@ elif menu == "Transactions":
             st.error(res.text)
 
 
+<<<<<<< HEAD
 # 🔹 Insights
+=======
+#  Insights 
+>>>>>>> df914f74c3162233035d0a577680582a75f14388
 elif menu == "Insights":
     acc_id = st.text_input("Account ID")
 
