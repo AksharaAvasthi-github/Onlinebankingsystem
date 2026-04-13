@@ -1,23 +1,38 @@
 from fastapi import FastAPI
-from database import customers, accounts, transactions
+from database import customers, accounts, transactions, requests
 import uuid
 from datetime import datetime
 from pydantic import BaseModel
-from database import requests
+from bson import ObjectId
 
 app = FastAPI()
 
+# =========================
+# 🔐 MODELS
+# =========================
 class ServiceRequest(BaseModel):
-    customer_id: str
     type: str
     description: str
 
+
+# =========================
+# 🔐 AUTH HELPER
+# =========================
+def get_user(token):
+    return customers.find_one({"token": token})
+
+
+# =========================
+# 🏠 HOME
+# =========================
 @app.get("/")
 def home():
     return {"msg": "API running"}
 
 
-# 🟢 Login (with token)
+# =========================
+# 🔑 LOGIN
+# =========================
 @app.post("/login")
 def login(user: dict):
     existing = customers.find_one({
@@ -38,18 +53,23 @@ def login(user: dict):
     return {"msg": "Login successful", "token": token}
 
 
-# 🔐 Auth helper
-def get_user(token):
-    return customers.find_one({"token": token})
-
-
-# 🟢 Add Balance (FIXED)
+# =========================
+# 💰 ADD BALANCE (SECURE)
+# =========================
 @app.post("/add-balance")
 def add_balance(data: dict):
+    user = get_user(data.get("token"))
+
+    if not user:
+        return {"error": "Unauthorized"}
+
     acc = accounts.find_one({"account_id": data["account_id"]})
 
     if not acc:
         return {"error": "Account not found"}
+
+    if acc["customer_id"] != user["customer_id"]:
+        return {"error": "Unauthorized access"}
 
     accounts.update_one(
         {"account_id": data["account_id"]},
@@ -59,7 +79,9 @@ def add_balance(data: dict):
     return {"msg": "Balance updated"}
 
 
-# 🤖 AI Fraud Detection
+# =========================
+# 🤖 FRAUD DETECTION
+# =========================
 def detect_anomaly(account_id, amount):
     user_txns = list(transactions.find({"from_account": account_id}))
 
@@ -68,13 +90,12 @@ def detect_anomaly(account_id, amount):
 
     avg = sum(t["amount"] for t in user_txns) / len(user_txns)
 
-    if amount > avg * 3:
-        return 1
-
-    return 0
+    return 1 if amount > avg * 3 else 0
 
 
-# 🟢 Transfer (FULL FIX)
+# =========================
+# 🔁 TRANSFER (SECURE)
+# =========================
 @app.post("/transfer")
 def transfer(data: dict):
     user = get_user(data.get("token"))
@@ -89,7 +110,6 @@ def transfer(data: dict):
     if not from_acc or not to_acc:
         return {"error": "Invalid account"}
 
-    # 🔒 ensure user owns account
     if from_acc["customer_id"] != user["customer_id"]:
         return {"error": "Unauthorized access"}
 
@@ -102,7 +122,6 @@ def transfer(data: dict):
     if amount > from_acc.get("transaction_limit", 10000):
         return {"error": "Limit exceeded"}
 
-    # 🤖 AI fraud detection
     flagged = detect_anomaly(data["from_account"], amount)
 
     # update balances
@@ -118,20 +137,37 @@ def transfer(data: dict):
 
     # save transaction
     transactions.insert_one({
+        "transaction_id": str(uuid.uuid4()),
         "from_account": data["from_account"],
         "to_account": data["to_account"],
         "amount": amount,
+        "type": "transfer",
         "status": "SUCCESS",
         "flagged": flagged,
-        "timestamp": datetime.utcnow()
+        "date": datetime.utcnow().strftime("%Y-%m-%d")
     })
 
     return {"msg": "Transfer successful", "flagged": flagged}
 
 
-# 🟢 Set Limit (FIXED)
+# =========================
+# ⚙️ SET LIMIT (SECURE)
+# =========================
 @app.post("/set-limit")
 def set_limit(data: dict):
+    user = get_user(data.get("token"))
+
+    if not user:
+        return {"error": "Unauthorized"}
+
+    acc = accounts.find_one({"account_id": data["account_id"]})
+
+    if not acc:
+        return {"error": "Account not found"}
+
+    if acc["customer_id"] != user["customer_id"]:
+        return {"error": "Unauthorized access"}
+
     accounts.update_one(
         {"account_id": data["account_id"]},
         {"$set": {"transaction_limit": data["limit"]}}
@@ -140,9 +176,24 @@ def set_limit(data: dict):
     return {"msg": "Limit updated"}
 
 
-# 🟢 Transaction History
+# =========================
+# 📄 TRANSACTIONS (SECURE)
+# =========================
 @app.get("/transactions/{account_id}")
-def get_transactions(account_id: str):
+def get_transactions(account_id: str, token: str):
+    user = get_user(token)
+
+    if not user:
+        return {"error": "Unauthorized"}
+
+    acc = accounts.find_one({"account_id": account_id})
+
+    if not acc:
+        return {"error": "Account not found"}
+
+    if acc["customer_id"] != user["customer_id"]:
+        return {"error": "Unauthorized access"}
+
     txns = list(transactions.find({
         "$or": [
             {"from_account": account_id},
@@ -156,9 +207,24 @@ def get_transactions(account_id: str):
     return txns
 
 
-# 🤖 AI Insights
+# =========================
+# 🤖 INSIGHTS (SECURE)
+# =========================
 @app.get("/insights/{account_id}")
-def insights(account_id: str):
+def insights(account_id: str, token: str):
+    user = get_user(token)
+
+    if not user:
+        return {"error": "Unauthorized"}
+
+    acc = accounts.find_one({"account_id": account_id})
+
+    if not acc:
+        return {"error": "Account not found"}
+
+    if acc["customer_id"] != user["customer_id"]:
+        return {"error": "Unauthorized access"}
+
     txns = list(transactions.find({"from_account": account_id}))
 
     total = sum(t["amount"] for t in txns)
@@ -171,10 +237,19 @@ def insights(account_id: str):
         "num_transactions": count
     }
 
+
+# =========================
+# 🛠 SERVICE REQUEST (FIXED)
+# =========================
 @app.post("/request-service")
-def request_service(data: ServiceRequest):
+def request_service(data: ServiceRequest, token: str):
+    user = get_user(token)
+
+    if not user:
+        return {"error": "Unauthorized"}
+
     requests.insert_one({
-        "customer_id": data.customer_id,
+        "customer_id": user["customer_id"],   # 🔥 AUTO
         "type": data.type,
         "description": data.description,
         "status": "PENDING",
@@ -183,17 +258,35 @@ def request_service(data: ServiceRequest):
 
     return {"msg": "Service request submitted"}
 
-@app.get("/requests/{customer_id}")
-def get_requests(customer_id: str):
-    reqs = list(requests.find({"customer_id": customer_id}))
+
+# =========================
+# 📋 GET MY REQUESTS (FIXED)
+# =========================
+@app.get("/requests/me")
+def get_requests(token: str):
+    user = get_user(token)
+
+    if not user:
+        return {"error": "Unauthorized"}
+
+    reqs = list(requests.find({"customer_id": user["customer_id"]}))
 
     for r in reqs:
         r["_id"] = str(r["_id"])
 
     return reqs
 
+
+# =========================
+# 🔧 UPDATE REQUEST
+# =========================
 @app.post("/update-request")
-def update_request(data: dict):
+def update_request(data: dict, token: str):
+    user = get_user(token)
+
+    if not user:
+        return {"error": "Unauthorized"}
+
     requests.update_one(
         {"_id": ObjectId(data["request_id"])},
         {"$set": {"status": data["status"]}}
